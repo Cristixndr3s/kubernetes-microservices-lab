@@ -1,0 +1,104 @@
+networks:
+  microservices-net:
+    external: true
+
+services:
+  configserver:
+    container_name: configserver
+    image: app-microservicios-configserver:latest
+    expose:
+      - 8071
+    ports:
+      - "8071:8071"
+    networks:
+      - microservices-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://configserver-service:8071/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  eurekaserver:
+    container_name: eurekaserver
+    image: app-microservicios-eurekaserver:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_CONFIG_IMPORT: configserver:http://configserver:8071/
+    expose:
+      - 8070
+    ports:
+      - "8070:8070"
+    depends_on:
+      configserver:
+        condition: service_healthy
+    networks:
+      - microservices-net
+
+  loans:
+    container_name: loans
+    image: app-microservicios-loans:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_CONFIG_IMPORT: configserver:http://configserver:8071/
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekaserver:8070/eureka/
+    expose:
+      - 8090
+    ports:
+      - "8090:8090"
+    depends_on:
+      - configserver
+      - eurekaserver
+    networks:
+      - microservices-net
+
+  cards:
+    container_name: cards
+    image: app-microservicios-cards:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_CONFIG_IMPORT: configserver:http://configserver:8071/
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekaserver:8070/eureka/
+    expose:
+      - 9000
+    ports:
+      - "9000:9000"
+    depends_on:
+      - configserver
+      - eurekaserver
+    networks:
+      - microservices-net
+
+  accounts:
+    container_name: accounts
+    image: app-microservicios-accounts:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_CONFIG_IMPORT: configserver:http://configserver:8071/
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekaserver:8070/eureka/
+    expose:
+      - 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - configserver
+      - eurekaserver
+    networks:
+      - microservices-net
+
+  gatewayserver:
+    container_name: gatewayserver
+    image: app-microservicios-gatewayserver:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_CONFIG_IMPORT: configserver:http://configserver:8071/
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekaserver:8070/eureka/
+    expose:
+      - 8072
+    ports:
+      - "8072:8072"
+    depends_on:
+      - configserver
+      - eurekaserver
+    networks:
+      - microservices-net
