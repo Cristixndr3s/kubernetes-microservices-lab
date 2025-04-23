@@ -10,7 +10,7 @@ pipeline {
         stage('Build Maven') {
             steps {
                 dir('accounts') {
-                    sh '/mvnw clean package -DskipTests'
+                    sh './mvnw clean package -DskipTests'
                 }
             }
         }
