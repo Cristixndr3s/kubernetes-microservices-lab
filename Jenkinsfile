@@ -1,108 +1,53 @@
 pipeline {
     agent {
         kubernetes {
-            inheritFrom 'docker-agent'
-            defaultContainer 'docker'
+            yamlFile 'jenkins/kaniko-pod.yaml'
         }
     }
-
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub')
-        DOCKER_USER = 'cristixndr3s'
-        DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
-        DOCKER_BUILDKIT = '1'
+        DOCKERHUB_CREDENTIALS = 'dockerhub' // ID de tus credenciales en Jenkins
+        DOCKERHUB_USERNAME = 'cristixndres'
+        REPO_NAME = 'kubernetes-microservices-lab'
     }
-
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main', url: 'https://github.com/Cristixndr3s/kubernetes-microservices-lab.git'
             }
         }
-
-        stage('Build Microservices') {
-            parallel {
-                stage('Config Server') {
-                    steps {
-                        dir('configserver') {
-                            sh 'mvn clean package -DskipTests'
-                        }
-                    }
-                }
-                stage('Eureka Server') {
-                    steps {
-                        dir('eurekaserver') {
-                            sh 'mvn clean package -DskipTests'
-                        }
-                    }
-                }
-                stage('Gateway Server') {
-                    steps {
-                        dir('gatewayserver') {
-                            sh 'mvn clean package -DskipTests'
-                        }
-                    }
-                }
-                stage('Accounts') {
-                    steps {
-                        dir('accounts') {
-                            sh 'mvn clean package -DskipTests'
-                        }
-                    }
-                }
-                stage('Cards') {
-                    steps {
-                        dir('cards') {
-                            sh 'mvn clean package -DskipTests'
-                        }
-                    }
-                }
-                stage('Loans') {
-                    steps {
-                        dir('loans') {
-                            sh 'mvn clean package -DskipTests'
-                        }
-                    }
-                }
-            }
-        }
-
         stage('Build and Push Docker Images') {
             steps {
-                script {
-                    def services = ['configserver', 'eurekaserver', 'gatewayserver', 'accounts', 'cards', 'loans']
+                container('kaniko') {
+                    sh '''
+                    echo "Building and pushing microservices..."
 
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                    microservices=(accounts cards configserver eurekaserver gatewayserver loans)
 
-                        services.each { service ->
-                            def imageName = "${DOCKER_USER}/${service}:${DOCKER_IMAGE_VERSION}"
-                            dir(service) {
-                                sh """
-                                    echo ">> Construyendo imagen ${imageName}"
-                                    docker build -t ${imageName} .
-                                    docker push ${imageName}
-                                """
-                            }
-                        }
-
-                        sh 'docker logout'
-                    }
+                    for service in "${microservices[@]}"; do
+                      /kaniko/executor \
+                        --dockerfile=$service/Dockerfile \
+                        --context=./$service \
+                        --destination=$DOCKERHUB_USERNAME/$service:latest \
+                        --skip-tls-verify=true
+                    done
+                    '''
                 }
             }
         }
-
         stage('Deploy to Kubernetes') {
             steps {
-                sh 'kubectl apply -f k8s/'
-            }
-        }
-    }
+                sh '''
+                echo "Deploying to Kubernetes..."
 
-    post {
-        always {
-            cleanWs()
+                kubectl apply -f k8s/configmap.yaml
+                kubectl apply -f k8s/accounts/
+                kubectl apply -f k8s/cards/
+                kubectl apply -f k8s/configserver/
+                kubectl apply -f k8s/eurekaserver/
+                kubectl apply -f k8s/gatewayserver/
+                kubectl apply -f k8s/loans/
+                '''
+            }
         }
     }
 }
-
