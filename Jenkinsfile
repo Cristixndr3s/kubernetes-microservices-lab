@@ -1,5 +1,23 @@
 pipeline {
-    agent any
+        agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: jnlp
+    image: jenkins/inbound-agent:3307.v632ed11b_3a_c7-2
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1"
+"""
+        }
+    }
 
     environment {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub')
