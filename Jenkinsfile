@@ -1,7 +1,25 @@
-pipeline {
-    agent {
-        kubernetes {
-            yamlFile 'jenkins/kaniko-pod.yaml'
+yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    some-label: kaniko
+spec:
+  containers:
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:latest
+    command:
+    - sleep
+    args:
+    - "9999999"
+    volumeMounts:
+      - name: kaniko-secret
+        mountPath: /kaniko/.docker
+  volumes:
+    - name: kaniko-secret
+      secret:
+        secretName: regcred
+"""
         }
     }
     environment {
