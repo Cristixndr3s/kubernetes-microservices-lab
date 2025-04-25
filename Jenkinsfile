@@ -20,6 +20,11 @@ spec:
     command:
       - cat
     tty: true
+  - name: docker
+    image: docker:24.0.2-cli
+    command:
+      - cat
+    tty: true
 """
         }
     }
@@ -101,58 +106,60 @@ spec:
 
         stage('Build and Push Docker Images') {
             steps {
-                script {
-                    def safeDockerPush = { imageName ->
-                        int maxRetries = 3
-                        int delaySeconds = 10
-                        int attempt = 1
+                container('docker') {
+                    script {
+                        def safeDockerPush = { imageName ->
+                            int maxRetries = 3
+                            int delaySeconds = 10
+                            int attempt = 1
 
-                        while (attempt <= maxRetries) {
-                            echo "🔄 Intento ${attempt} para subir ${imageName}"
-                            def result = sh(script: "docker push ${imageName}", returnStatus: true)
+                            while (attempt <= maxRetries) {
+                                echo "🔄 Intento ${attempt} para subir ${imageName}"
+                                def result = sh(script: "docker push ${imageName}", returnStatus: true)
 
-                            if (result == 0) {
-                                echo "✅ Imagen ${imageName} subida correctamente"
-                                break
-                            } else {
-                                echo "⚠️ Falló el push (intento ${attempt})"
-                                if (attempt == maxRetries) {
-                                    error "❌ No se pudo subir ${imageName} después de ${maxRetries} intentos"
+                                if (result == 0) {
+                                    echo "✅ Imagen ${imageName} subida correctamente"
+                                    break
+                                } else {
+                                    echo "⚠️ Falló el push (intento ${attempt})"
+                                    if (attempt == maxRetries) {
+                                        error "❌ No se pudo subir ${imageName} después de ${maxRetries} intentos"
+                                    }
+                                    sleep(time: delaySeconds, unit: "SECONDS")
+                                    attempt++
                                 }
-                                sleep(time: delaySeconds, unit: "SECONDS")
-                                attempt++
                             }
                         }
-                    }
 
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                            sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
 
-                        def services = [
-                            'configserver': 'configserver',
-                            'eurekaserver': 'eurekaserver',
-                            'gatewayserver': 'gatewayserver',
-                            'accounts': 'accounts-service',
-                            'cards': 'cards-service',
-                            'loans': 'loans-service'
-                        ]
+                            def services = [
+                                'configserver': 'configserver',
+                                'eurekaserver': 'eurekaserver',
+                                'gatewayserver': 'gatewayserver',
+                                'accounts': 'accounts-service',
+                                'cards': 'cards-service',
+                                'loans': 'loans-service'
+                            ]
 
-                        parallel services.collectEntries { dirName, dockerName ->
-                            ["${dirName}": {
-                                dir(dirName) {
-                                    def imageName = "cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION}"
+                            parallel services.collectEntries { dirName, dockerName ->
+                                ["${dirName}": {
+                                    dir(dirName) {
+                                        def imageName = "cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION}"
 
-                                    sh """
-                                        echo ">> Construyendo imagen ${imageName}"
-                                        docker build -t ${imageName} .
-                                    """
+                                        sh """
+                                            echo ">> Construyendo imagen ${imageName}"
+                                            docker build -t ${imageName} .
+                                        """
 
-                                    safeDockerPush(imageName)
-                                }
-                            }]
+                                        safeDockerPush(imageName)
+                                    }
+                                }]
+                            }
+
+                            sh 'docker logout'
                         }
-
-                        sh 'docker logout'
                     }
                 }
             }
