@@ -15,6 +15,11 @@ spec:
       limits:
         memory: "2Gi"
         cpu: "1"
+  - name: maven
+    image: maven:3.9.5-eclipse-temurin-17
+    command:
+      - cat
+    tty: true
 """
         }
     }
@@ -39,49 +44,55 @@ spec:
             parallel {
                 stage('Config Server') {
                     steps {
-                        dir('configserver') {
-                            sh 'chmod +x ./mvnw'
-                            sh 'mvn clean package -DskipTests'
+                        container('maven') {
+                            dir('configserver') {
+                                sh 'mvn clean package -DskipTests'
+                            }
                         }
                     }
                 }
                 stage('Eureka Server') {
                     steps {
-                        dir('eurekaserver') {
-                            sh 'chmod +x ./mvnw'
-                            sh 'mvn clean package -DskipTests'
+                        container('maven') {
+                            dir('eurekaserver') {
+                                sh 'mvn clean package -DskipTests'
+                            }
                         }
                     }
                 }
                 stage('Gateway Server') {
                     steps {
-                        dir('gatewayserver') {
-                            sh 'chmod +x ./mvnw'
-                            sh 'mvn clean package -DskipTests'
+                        container('maven') {
+                            dir('gatewayserver') {
+                                sh 'mvn clean package -DskipTests'
+                            }
                         }
                     }
                 }
                 stage('Accounts') {
                     steps {
-                        dir('accounts') {
-                            sh 'chmod +x ./mvnw'
-                            sh 'mvn clean package -DskipTests'
+                        container('maven') {
+                            dir('accounts') {
+                                sh 'mvn clean package -DskipTests'
+                            }
                         }
                     }
                 }
                 stage('Cards') {
                     steps {
-                        dir('cards') {
-                            sh 'chmod +x ./mvnw'
-                            sh 'mvn clean package -DskipTests'
+                        container('maven') {
+                            dir('cards') {
+                                sh 'mvn clean package -DskipTests'
+                            }
                         }
                     }
                 }
                 stage('Loans') {
                     steps {
-                        dir('loans') {
-                            sh 'chmod +x ./mvnw'
-                            sh 'mvn clean package -DskipTests'
+                        container('maven') {
+                            dir('loans') {
+                                sh 'mvn clean package -DskipTests'
+                            }
                         }
                     }
                 }
