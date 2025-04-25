@@ -40,7 +40,7 @@ spec:
                 stage('Config Server') {
                     steps {
                         dir('configserver') {
-                            sh 'chmod +x mvn'
+                            sh 'chmod +x ./mvnw'
                             sh 'mvn clean package -DskipTests'
                         }
                     }
@@ -48,7 +48,7 @@ spec:
                 stage('Eureka Server') {
                     steps {
                         dir('eurekaserver') {
-                            sh 'chmod +x mvn'
+                            sh 'chmod +x ./mvnw'
                             sh 'mvn clean package -DskipTests'
                         }
                     }
@@ -56,7 +56,7 @@ spec:
                 stage('Gateway Server') {
                     steps {
                         dir('gatewayserver') {
-                            sh 'chmod +x mvn'
+                            sh 'chmod +x ./mvnw'
                             sh 'mvn clean package -DskipTests'
                         }
                     }
@@ -64,7 +64,7 @@ spec:
                 stage('Accounts') {
                     steps {
                         dir('accounts') {
-                            sh 'chmod +x mvn'
+                            sh 'chmod +x ./mvnw'
                             sh 'mvn clean package -DskipTests'
                         }
                     }
@@ -72,7 +72,7 @@ spec:
                 stage('Cards') {
                     steps {
                         dir('cards') {
-                            sh 'chmod +x mvn'
+                            sh 'chmod +x ./mvnw'
                             sh 'mvn clean package -DskipTests'
                         }
                     }
@@ -80,7 +80,7 @@ spec:
                 stage('Loans') {
                     steps {
                         dir('loans') {
-                            sh 'chmod +x mvn'
+                            sh 'chmod +x ./mvnw'
                             sh 'mvn clean package -DskipTests'
                         }
                     }
