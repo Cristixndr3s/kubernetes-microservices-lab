@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            label 'docker'
+            defaultContainer 'docker'
+        }
+    }
 
     environment {
         DOCKER_HUB_CREDENTIALS = credentials('dockerhub')
@@ -21,7 +26,7 @@ pipeline {
                     services.each { service ->
                         dir(service) {
                             sh """
-                                echo "Building $service"
+                                echo "🔧 Building $service"
                                 docker build -t $DOCKER_USER/${service}:latest .
                                 echo $DOCKER_HUB_CREDENTIALS_PSW | docker login -u $DOCKER_HUB_CREDENTIALS_USR --password-stdin
                                 docker push $DOCKER_USER/${service}:latest
@@ -35,7 +40,7 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 sh """
-                    echo "Applying manifests from k8s/"
+                    echo "🚀 Applying Kubernetes manifests..."
                     kubectl apply -f k8s/
                 """
             }
