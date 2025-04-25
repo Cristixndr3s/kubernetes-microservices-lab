@@ -1,7 +1,7 @@
 pipeline {
     agent {
         kubernetes {
-            yaml """
+yaml """
 apiVersion: v1
 kind: Pod
 metadata:
@@ -11,10 +11,14 @@ spec:
   containers:
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
-    command:
-    - sleep
-    args:
-    - "9999999"
+    command: ["/busybox/sh", "-c", "sleep 3600"]
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
     volumeMounts:
     - name: kaniko-secret
       mountPath: /kaniko/.docker
