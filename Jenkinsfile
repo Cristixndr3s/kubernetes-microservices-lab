@@ -1,37 +1,92 @@
 pipeline {
     agent {
         kubernetes {
-            label 'docker'
+            inheritFrom 'docker-agent'
             defaultContainer 'docker'
         }
     }
 
     environment {
-        DOCKER_HUB_CREDENTIALS = credentials('dockerhub')
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')
         DOCKER_USER = 'cristixndr3s'
+        DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
+        DOCKER_BUILDKIT = '1'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/Cristixndr3s/kubernetes-microservices-lab.git'
+                checkout scm
+            }
+        }
+
+        stage('Build Microservices') {
+            parallel {
+                stage('Config Server') {
+                    steps {
+                        dir('configserver') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+                stage('Eureka Server') {
+                    steps {
+                        dir('eurekaserver') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+                stage('Gateway Server') {
+                    steps {
+                        dir('gatewayserver') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+                stage('Accounts') {
+                    steps {
+                        dir('accounts') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+                stage('Cards') {
+                    steps {
+                        dir('cards') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+                stage('Loans') {
+                    steps {
+                        dir('loans') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
             }
         }
 
         stage('Build and Push Docker Images') {
             steps {
                 script {
-                    def services = ['accounts', 'cards', 'configserver', 'eurekaserver', 'gatewayserver', 'loans']
-                    services.each { service ->
-                        dir(service) {
-                            sh """
-                                echo "🔧 Building $service"
-                                docker build -t $DOCKER_USER/${service}:latest .
-                                echo $DOCKER_HUB_CREDENTIALS_PSW | docker login -u $DOCKER_HUB_CREDENTIALS_USR --password-stdin
-                                docker push $DOCKER_USER/${service}:latest
-                            """
+                    def services = ['configserver', 'eurekaserver', 'gatewayserver', 'accounts', 'cards', 'loans']
+
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+
+                        services.each { service ->
+                            def imageName = "${DOCKER_USER}/${service}:${DOCKER_IMAGE_VERSION}"
+                            dir(service) {
+                                sh """
+                                    echo ">> Construyendo imagen ${imageName}"
+                                    docker build -t ${imageName} .
+                                    docker push ${imageName}
+                                """
+                            }
                         }
+
+                        sh 'docker logout'
                     }
                 }
             }
@@ -39,11 +94,15 @@ pipeline {
 
         stage('Deploy to Kubernetes') {
             steps {
-                sh """
-                    echo "🚀 Applying Kubernetes manifests..."
-                    kubectl apply -f k8s/
-                """
+                sh 'kubectl apply -f k8s/'
             }
         }
     }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
 }
+
