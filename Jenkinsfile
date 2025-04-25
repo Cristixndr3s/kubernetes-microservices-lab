@@ -5,7 +5,7 @@ pipeline {
         }
     }
     environment {
-        DOCKERHUB_CREDENTIALS = 'dockerhub' // ID de tus credenciales en Jenkins
+        DOCKERHUB_CREDENTIALS = 'dockerhub'
         DOCKERHUB_USERNAME = 'cristixndres'
         REPO_NAME = 'kubernetes-microservices-lab'
     }
@@ -19,7 +19,7 @@ pipeline {
             steps {
                 container('kaniko') {
                     sh '''
-                    echo "Building and pushing microservices..."
+                    echo "🔧 Building and pushing Docker images..."
 
                     microservices=(accounts cards configserver eurekaserver gatewayserver loans)
 
@@ -36,17 +36,19 @@ pipeline {
         }
         stage('Deploy to Kubernetes') {
             steps {
-                sh '''
-                echo "Deploying to Kubernetes..."
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                    echo "🚀 Deploying to Kubernetes..."
 
-                kubectl apply -f k8s/configmap.yaml
-                kubectl apply -f k8s/accounts/
-                kubectl apply -f k8s/cards/
-                kubectl apply -f k8s/configserver/
-                kubectl apply -f k8s/eurekaserver/
-                kubectl apply -f k8s/gatewayserver/
-                kubectl apply -f k8s/loans/
-                '''
+                    kubectl apply -f k8s/configmap.yaml
+                    kubectl apply -f k8s/accounts/
+                    kubectl apply -f k8s/cards/
+                    kubectl apply -f k8s/configserver/
+                    kubectl apply -f k8s/eurekaserver/
+                    kubectl apply -f k8s/gatewayserver/
+                    kubectl apply -f k8s/loans/
+                    '''
+                }
             }
         }
     }
