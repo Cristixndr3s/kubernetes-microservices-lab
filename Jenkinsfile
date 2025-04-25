@@ -22,6 +22,7 @@ pipeline {
                 stage('Config Server') {
                     steps {
                         dir('configserver') {
+                            sh 'chmod +x ./mvnw'
                             sh './mvnw clean package -DskipTests'
                         }
                     }
@@ -29,6 +30,7 @@ pipeline {
                 stage('Eureka Server') {
                     steps {
                         dir('eurekaserver') {
+                            sh 'chmod +x ./mvnw'
                             sh './mvnw clean package -DskipTests'
                         }
                     }
@@ -36,6 +38,7 @@ pipeline {
                 stage('Gateway Server') {
                     steps {
                         dir('gatewayserver') {
+                            sh 'chmod +x ./mvnw'
                             sh './mvnw clean package -DskipTests'
                         }
                     }
@@ -43,6 +46,7 @@ pipeline {
                 stage('Accounts') {
                     steps {
                         dir('accounts') {
+                            sh 'chmod +x ./mvnw'
                             sh './mvnw clean package -DskipTests'
                         }
                     }
@@ -50,6 +54,7 @@ pipeline {
                 stage('Cards') {
                     steps {
                         dir('cards') {
+                            sh 'chmod +x ./mvnw'
                             sh './mvnw clean package -DskipTests'
                         }
                     }
@@ -57,6 +62,7 @@ pipeline {
                 stage('Loans') {
                     steps {
                         dir('loans') {
+                            sh 'chmod +x ./mvnw'
                             sh './mvnw clean package -DskipTests'
                         }
                     }
@@ -164,9 +170,9 @@ pipeline {
         }
     }
 
-    post {
-        always {
-            cleanWs()
-        }
-    }
-}
+  //  post {
+  //       always {
+  //           cleanWs()
+  //       }
+  //   }
+// }
