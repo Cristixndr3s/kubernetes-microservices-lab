@@ -1,5 +1,5 @@
 pipeline {
-        agent {
+    agent {
         kubernetes {
             yaml """
 apiVersion: v1
@@ -93,22 +93,22 @@ spec:
                 script {
                     def safeDockerPush = { imageName ->
                         int maxRetries = 3
-                        int retryDelaySeconds = 10
+                        int delaySeconds = 10
                         int attempt = 1
 
                         while (attempt <= maxRetries) {
                             echo "🔄 Intento ${attempt} para subir ${imageName}"
                             def result = sh(script: "docker push ${imageName}", returnStatus: true)
-                            
+
                             if (result == 0) {
-                                echo "✅ Imagen ${imageName} subida correctamente en el intento ${attempt}"
+                                echo "✅ Imagen ${imageName} subida correctamente"
                                 break
                             } else {
-                                echo "⚠️ Falló el push de ${imageName} (intento ${attempt})"
+                                echo "⚠️ Falló el push (intento ${attempt})"
                                 if (attempt == maxRetries) {
                                     error "❌ No se pudo subir ${imageName} después de ${maxRetries} intentos"
                                 }
-                                sleep(time: retryDelaySeconds, unit: "SECONDS")
+                                sleep(time: delaySeconds, unit: "SECONDS")
                                 attempt++
                             }
                         }
@@ -127,13 +127,13 @@ spec:
                         ]
 
                         parallel services.collectEntries { dirName, dockerName ->
-                            ["${dirName}" : {
+                            ["${dirName}": {
                                 dir(dirName) {
                                     def imageName = "cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION}"
 
                                     sh """
                                         echo ">> Construyendo imagen ${imageName}"
-                                        docker build --platform linux/amd64 -t ${imageName} .
+                                        docker build -t ${imageName} .
                                     """
 
                                     safeDockerPush(imageName)
@@ -188,9 +188,9 @@ spec:
         }
     }
 
-  //  post {
-  //       always {
-  //           cleanWs()
-  //       }
-  //   }
- }
+    post {
+        always {
+            echo "✅ Pipeline finalizado (cleanup)"
+        }
+    }
+}
