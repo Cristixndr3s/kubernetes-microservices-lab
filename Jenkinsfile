@@ -1,80 +1,172 @@
 pipeline {
-    agent {
-        kubernetes {
-yaml """
-apiVersion: v1
-kind: Pod
-metadata:
-  labels:
-    some-label: kaniko
-spec:
-  containers:
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    command: ["/busybox/sh", "-c", "sleep 3600"]
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
-        memory: "1Gi"
-        cpu: "500m"
-    volumeMounts:
-    - name: kaniko-secret
-      mountPath: /kaniko/.docker
-  volumes:
-  - name: kaniko-secret
-    secret:
-      secretName: regcred
-"""
-        }
-    }
+    agent any
+
     environment {
-        DOCKERHUB_CREDENTIALS = 'dockerhub'
-        DOCKERHUB_USERNAME = 'cristixndres'
-        REPO_NAME = 'kubernetes-microservices-lab'
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')
+        PROJECT_ID = 'laboratorio-final-457821'
+        CLUSTER_NAME = 'jenkins-cluster'
+        LOCATION = 'us-central1'
+        DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
+        DOCKER_BUILDKIT = '1'
     }
+
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/Cristixndr3s/kubernetes-microservices-lab.git'
+                checkout scm
             }
         }
+
+        stage('Build Microservices') {
+            parallel {
+                stage('Config Server') {
+                    steps {
+                        dir('configserver') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+                stage('Eureka Server') {
+                    steps {
+                        dir('eurekaserver') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+                stage('Gateway Server') {
+                    steps {
+                        dir('gatewayserver') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+                stage('Accounts') {
+                    steps {
+                        dir('accounts') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+                stage('Cards') {
+                    steps {
+                        dir('cards') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+                stage('Loans') {
+                    steps {
+                        dir('loans') {
+                            sh 'mvn clean package -DskipTests'
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Build and Push Docker Images') {
             steps {
-                container('kaniko') {
-                    sh '''
-                    echo "🔧 Building and pushing Docker images..."
+                script {
+                    def safeDockerPush = { imageName ->
+                        int maxRetries = 3
+                        int retryDelaySeconds = 10
+                        int attempt = 1
 
-                    microservices=(accounts cards configserver eurekaserver gatewayserver loans)
+                        while (attempt <= maxRetries) {
+                            echo "🔄 Intento ${attempt} para subir ${imageName}"
+                            def result = sh(script: "docker push ${imageName}", returnStatus: true)
+                            
+                            if (result == 0) {
+                                echo "✅ Imagen ${imageName} subida correctamente en el intento ${attempt}"
+                                break
+                            } else {
+                                echo "⚠️ Falló el push de ${imageName} (intento ${attempt})"
+                                if (attempt == maxRetries) {
+                                    error "❌ No se pudo subir ${imageName} después de ${maxRetries} intentos"
+                                }
+                                sleep(time: retryDelaySeconds, unit: "SECONDS")
+                                attempt++
+                            }
+                        }
+                    }
 
-                    for service in "${microservices[@]}"; do
-                      /kaniko/executor \
-                        --dockerfile=$service/Dockerfile \
-                        --context=./$service \
-                        --destination=$DOCKERHUB_USERNAME/$service:latest \
-                        --skip-tls-verify=true
-                    done
-                    '''
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+
+                        def services = [
+                            'configserver': 'configserver',
+                            'eurekaserver': 'eurekaserver',
+                            'gatewayserver': 'gatewayserver',
+                            'accounts': 'accounts-service',
+                            'cards': 'cards-service',
+                            'loans': 'loans-service'
+                        ]
+
+                        parallel services.collectEntries { dirName, dockerName ->
+                            ["${dirName}" : {
+                                dir(dirName) {
+                                    def imageName = "cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION}"
+
+                                    sh """
+                                        echo ">> Construyendo imagen ${imageName}"
+                                        docker build --platform linux/amd64 -t ${imageName} .
+                                    """
+
+                                    safeDockerPush(imageName)
+                                }
+                            }]
+                        }
+
+                        sh 'docker logout'
+                    }
                 }
             }
         }
-        stage('Deploy to Kubernetes') {
-            steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-                    sh '''
-                    echo "🚀 Deploying to Kubernetes..."
 
-                    kubectl apply -f k8s/configmap.yaml
-                    kubectl apply -f k8s/accounts/
-                    kubectl apply -f k8s/cards/
-                    kubectl apply -f k8s/configserver/
-                    kubectl apply -f k8s/eurekaserver/
-                    kubectl apply -f k8s/gatewayserver/
-                    kubectl apply -f k8s/loans/
-                    '''
+        stage('Update Kubernetes Manifests') {
+            steps {
+                script {
+                    def services = [
+                        'configserver': 'configserver',
+                        'eurekaserver': 'eurekaserver',
+                        'gatewayserver': 'gatewayserver',
+                        'accounts': 'accounts-service',
+                        'cards': 'cards-service',
+                        'loans': 'loans-service'
+                    ]
+                    services.each { dirName, dockerName ->
+                        sh """
+                            sed -i 's|cristixndres/${dockerName}:[^ ]*|cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION}|' k8s/${dirName}/deployment.yaml
+                        """
+                    }
                 }
             }
+        }
+
+        stage('Deploy to GKE') {
+            steps {
+                withCredentials([file(credentialsId: 'gcp-credentials', variable: 'GCP_KEY')]) {
+                    script {
+                        sh '''
+                            gcloud auth activate-service-account --key-file=$GCP_KEY
+                            gcloud container clusters get-credentials $CLUSTER_NAME --region $LOCATION --project $PROJECT_ID
+
+                            kubectl apply -f k8s/configmap.yaml
+
+                            for service in configserver eurekaserver gatewayserver accounts loans cards; do
+                                kubectl apply -f k8s/$service/deployment.yaml
+                                kubectl apply -f k8s/$service/service.yaml
+                            done
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
         }
     }
 }
