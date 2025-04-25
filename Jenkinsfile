@@ -1,4 +1,7 @@
-yaml """
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
 apiVersion: v1
 kind: Pod
 metadata:
@@ -13,12 +16,12 @@ spec:
     args:
     - "9999999"
     volumeMounts:
-      - name: kaniko-secret
-        mountPath: /kaniko/.docker
-  volumes:
     - name: kaniko-secret
-      secret:
-        secretName: regcred
+      mountPath: /kaniko/.docker
+  volumes:
+  - name: kaniko-secret
+    secret:
+      secretName: regcred
 """
         }
     }
