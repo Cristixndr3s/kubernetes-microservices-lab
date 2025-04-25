@@ -21,20 +21,16 @@ spec:
       - cat
     tty: true
   - name: docker
-    image: docker:24.0.2-dind
-    securityContext:
-      privileged: true
+    image: docker:24.0.2-cli
     command:
-      - dockerd-entrypoint.sh
-    args:
-      - --host=tcp://127.0.0.1:2375
-      - --host=unix:///var/run/docker.sock
+      - cat
     tty: true
 """
         }
     }
 
     environment {
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')
         PROJECT_ID = 'laboratorio-final-457821'
         CLUSTER_NAME = 'jenkins-cluster'
         LOCATION = 'us-central1'
@@ -111,8 +107,33 @@ spec:
         stage('Build and Push Docker Images') {
             steps {
                 container('docker') {
-                    withEnv(['DOCKER_HOST=tcp://127.0.0.1:2375']) {
-                        script {
+                    script {
+                        def safeDockerPush = { imageName ->
+                            int maxRetries = 3
+                            int delaySeconds = 10
+                            int attempt = 1
+
+                            while (attempt <= maxRetries) {
+                                echo "🔄 Intento ${attempt} para subir ${imageName}"
+                                def result = sh(script: "docker push ${imageName}", returnStatus: true)
+
+                                if (result == 0) {
+                                    echo "✅ Imagen ${imageName} subida correctamente"
+                                    break
+                                } else {
+                                    echo "⚠️ Falló el push (intento ${attempt})"
+                                    if (attempt == maxRetries) {
+                                        error "❌ No se pudo subir ${imageName} después de ${maxRetries} intentos"
+                                    }
+                                    sleep(time: delaySeconds, unit: "SECONDS")
+                                    attempt++
+                                }
+                            }
+                        }
+
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                            sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+
                             def services = [
                                 'configserver': 'configserver',
                                 'eurekaserver': 'eurekaserver',
@@ -130,11 +151,14 @@ spec:
                                         sh """
                                             echo ">> Construyendo imagen ${imageName}"
                                             docker build -t ${imageName} .
-                                            docker push ${imageName}
                                         """
+
+                                        safeDockerPush(imageName)
                                     }
                                 }]
                             }
+
+                            sh 'docker logout'
                         }
                     }
                 }
