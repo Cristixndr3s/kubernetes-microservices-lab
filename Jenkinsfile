@@ -20,27 +20,22 @@ spec:
     command:
       - cat
     tty: true
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
+  - name: docker
+    image: docker:24.0.2-cli
     command:
       - cat
     tty: true
-    volumeMounts:
-    - name: kaniko-secret
-      mountPath: /kaniko/.docker
-  volumes:
-  - name: kaniko-secret
-    secret:
-      secretName: dockerhub-secret
 """
         }
     }
 
     environment {
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')
         PROJECT_ID = 'laboratorio-final-457821'
         CLUSTER_NAME = 'jenkins-cluster'
         LOCATION = 'us-central1'
         DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
+        DOCKER_BUILDKIT = '1'
     }
 
     stages {
@@ -111,31 +106,59 @@ spec:
 
         stage('Build and Push Docker Images') {
             steps {
-                container('kaniko') {
+                container('docker') {
                     script {
-                        def services = [
-                            'configserver': 'configserver',
-                            'eurekaserver': 'eurekaserver',
-                            'gatewayserver': 'gatewayserver',
-                            'accounts': 'accounts-service',
-                            'cards': 'cards-service',
-                            'loans': 'loans-service'
-                        ]
+                        def safeDockerPush = { imageName ->
+                            int maxRetries = 3
+                            int delaySeconds = 10
+                            int attempt = 1
 
-                        parallel services.collectEntries { dirName, dockerName ->
-                            ["${dirName}": {
-                                dir(dirName) {
-                                    def imageName = "cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION}"
+                            while (attempt <= maxRetries) {
+                                echo "🔄 Intento ${attempt} para subir ${imageName}"
+                                def result = sh(script: "docker push ${imageName}", returnStatus: true)
 
-                                    sh """
-                                        /kaniko/executor \
-                                          --dockerfile=Dockerfile \
-                                          --context=$(pwd) \
-                                          --destination=${imageName} \
-                                          --skip-tls-verify
-                                    """
+                                if (result == 0) {
+                                    echo "✅ Imagen ${imageName} subida correctamente"
+                                    break
+                                } else {
+                                    echo "⚠️ Falló el push (intento ${attempt})"
+                                    if (attempt == maxRetries) {
+                                        error "❌ No se pudo subir ${imageName} después de ${maxRetries} intentos"
+                                    }
+                                    sleep(time: delaySeconds, unit: "SECONDS")
+                                    attempt++
                                 }
-                            }]
+                            }
+                        }
+
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                            sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+
+                            def services = [
+                                'configserver': 'configserver',
+                                'eurekaserver': 'eurekaserver',
+                                'gatewayserver': 'gatewayserver',
+                                'accounts': 'accounts-service',
+                                'cards': 'cards-service',
+                                'loans': 'loans-service'
+                            ]
+
+                            parallel services.collectEntries { dirName, dockerName ->
+                                ["${dirName}": {
+                                    dir(dirName) {
+                                        def imageName = "cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION}"
+
+                                        sh """
+                                            echo ">> Construyendo imagen ${imageName}"
+                                            docker build -t ${imageName} .
+                                        """
+
+                                        safeDockerPush(imageName)
+                                    }
+                                }]
+                            }
+
+                            sh 'docker logout'
                         }
                     }
                 }
