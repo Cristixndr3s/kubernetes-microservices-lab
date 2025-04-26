@@ -5,6 +5,10 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  volumes:
+  - name: docker-socket
+    hostPath:
+      path: /var/run/docker.sock
   containers:
   - name: jnlp
     image: jenkins/inbound-agent:3307.v632ed11b_3a_c7-2
@@ -25,6 +29,9 @@ spec:
     command:
       - cat
     tty: true
+    volumeMounts:
+    - name: docker-socket
+      mountPath: /var/run/docker.sock
 """
         }
     }
