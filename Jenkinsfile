@@ -21,12 +21,10 @@ spec:
       - cat
     tty: true
   - name: docker
-    image: docker:24.0.2-dind
-    securityContext:
-      privileged: true
-    env:
-      - name: DOCKER_TLS_CERTDIR
-        value: ""
+    image: docker:24.0.2-cli
+    command:
+      - cat
+    tty: true
 """
         }
     }
