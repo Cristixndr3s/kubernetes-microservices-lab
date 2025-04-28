@@ -7,30 +7,37 @@ kind: Pod
 spec:
   containers:
   - name: maven
-    image: maven:3.9.5-eclipse-temurin-17
+    image: maven:3.9.3-eclipse-temurin-17
     command:
-      - cat
+    - cat
     tty: true
     resources:
       requests:
-        memory: "1Gi"
-        cpu: "500m"
-      limits:
-        memory: "2Gi"
-        cpu: "1"
+        memory: "512Mi"
+        cpu: "250m"
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
-    command:
-      - /kaniko/executor
-      - --help
-    tty: true
+    args:
+    - --dockerfile=\$(DOCKERFILE)
+    - --context=\$(CONTEXT)
+    - --destination=\$(DESTINATION_IMAGE)
+    - --oci-layout-path=\$(OCI_LAYOUT_PATH)
+    - --skip-tls-verify
+    env:
+    - name: GOOGLE_APPLICATION_CREDENTIALS
+      value: /secret/kaniko-secret
     volumeMounts:
-      - name: kaniko-secret
-        mountPath: /kaniko/.docker
-  volumes:
     - name: kaniko-secret
-      secret:
-        secretName: dockerhub-config
+      mountPath: /secret
+      readOnly: true
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+  volumes:
+  - name: kaniko-secret
+    secret:
+      secretName: dockerhub-config
 """
         }
     }
@@ -41,139 +48,20 @@ spec:
         CLUSTER_NAME = 'jenkins-cluster'
         LOCATION = 'us-central1'
         DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
+        DOCKERFILE = "Dockerfile"
+        CONTEXT = "."
+        DESTINATION_IMAGE = "docker.io/cristixndres/\${JOB_BASE_NAME}:${BUILD_NUMBER}"
+        OCI_LAYOUT_PATH = "/kaniko/output"
     }
 
     stages {
-        stage('Checkout') {
+        stage('Build and Push Docker Image') {
             steps {
-                checkout scm
-            }
-        }
-
-        stage('Build Microservices') {
-            parallel {
-                stage('Config Server') {
-                    steps {
-                        container('maven') {
-                            dir('configserver') {
-                                sh 'mvn clean package -DskipTests'
-                            }
-                        }
-                    }
+                container('maven') {
+                    sh 'mvn clean package -DskipTests'
                 }
-                stage('Eureka Server') {
-                    steps {
-                        container('maven') {
-                            dir('eurekaserver') {
-                                sh 'mvn clean package -DskipTests'
-                            }
-                        }
-                    }
-                }
-                stage('Gateway Server') {
-                    steps {
-                        container('maven') {
-                            dir('gatewayserver') {
-                                sh 'mvn clean package -DskipTests'
-                            }
-                        }
-                    }
-                }
-                stage('Accounts') {
-                    steps {
-                        container('maven') {
-                            dir('accounts') {
-                                sh 'mvn clean package -DskipTests'
-                            }
-                        }
-                    }
-                }
-                stage('Cards') {
-                    steps {
-                        container('maven') {
-                            dir('cards') {
-                                sh 'mvn clean package -DskipTests'
-                            }
-                        }
-                    }
-                }
-                stage('Loans') {
-                    steps {
-                        container('maven') {
-                            dir('loans') {
-                                sh 'mvn clean package -DskipTests'
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Build and Push Docker Images with Kaniko') {
-            steps {
                 container('kaniko') {
-                    script {
-                        def services = [
-                            'configserver': 'configserver',
-                            'eurekaserver': 'eurekaserver',
-                            'gatewayserver': 'gatewayserver',
-                            'accounts': 'accounts-service',
-                            'cards': 'cards-service',
-                            'loans': 'loans-service'
-                        ]
-
-                        services.each { dirName, dockerName ->
-                            dir("${dirName}") {
-                                sh """
-                                    /kaniko/executor \
-                                      --dockerfile=Dockerfile \
-                                      --context=\$(pwd) \
-                                      --destination=docker.io/cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION} \
-                                      --skip-tls-verify
-                                """
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Update Kubernetes Manifests') {
-            steps {
-                script {
-                    def services = [
-                        'configserver': 'configserver',
-                        'eurekaserver': 'eurekaserver',
-                        'gatewayserver': 'gatewayserver',
-                        'accounts': 'accounts-service',
-                        'cards': 'cards-service',
-                        'loans': 'loans-service'
-                    ]
-                    services.each { dirName, dockerName ->
-                        sh """
-                            sed -i 's|cristixndres/${dockerName}:[^ ]*|cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION}|' k8s/${dirName}/deployment.yaml
-                        """
-                    }
-                }
-            }
-        }
-
-        stage('Deploy to GKE') {
-            steps {
-                withCredentials([file(credentialsId: 'gcp-credentials', variable: 'GCP_KEY')]) {
-                    script {
-                        sh '''
-                            gcloud auth activate-service-account --key-file=$GCP_KEY
-                            gcloud container clusters get-credentials $CLUSTER_NAME --region $LOCATION --project $PROJECT_ID
-
-                            kubectl apply -f k8s/configmap.yaml
-
-                            for service in configserver eurekaserver gatewayserver accounts loans cards; do
-                                kubectl apply -f k8s/$service/deployment.yaml
-                                kubectl apply -f k8s/$service/service.yaml
-                            done
-                        '''
-                    }
+                    sh '/kaniko/executor'
                 }
             }
         }
@@ -181,7 +69,7 @@ spec:
 
     post {
         always {
-            echo "✅ Pipeline finalizado (cleanup)"
+            echo '✅ Pipeline finalizado (cleanup)'
         }
     }
 }
