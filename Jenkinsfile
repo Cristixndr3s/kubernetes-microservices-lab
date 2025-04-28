@@ -127,7 +127,7 @@ spec:
                                 sh """
                                     /kaniko/executor \
                                       --dockerfile=Dockerfile \
-                                      --context=$(pwd) \
+                                      --context=\$(pwd) \
                                       --destination=docker.io/cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION} \
                                       --skip-tls-verify
                                 """
