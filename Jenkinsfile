@@ -6,32 +6,23 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-  - name: jnlp
-    image: jenkins/inbound-agent:3307.v632ed11b_3a_c7-2
-    resources:
-      requests:
-        memory: "1Gi"
-        cpu: "500m"
-      limits:
-        memory: "2Gi"
-        cpu: "1"
   - name: maven
     image: maven:3.9.5-eclipse-temurin-17
     command:
       - cat
     tty: true
-  - name: docker
-    image: docker:20.10.7
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:latest
     command:
       - cat
     tty: true
     volumeMounts:
-      - name: docker-sock
-        mountPath: /var/run/docker.sock
+      - name: kaniko-secret
+        mountPath: /kaniko/.docker
   volumes:
-    - name: docker-sock
-      hostPath:
-        path: /var/run/docker.sock
+    - name: kaniko-secret
+      secret:
+        secretName: dockerhub-config
 """
         }
     }
@@ -42,7 +33,6 @@ spec:
         CLUSTER_NAME = 'jenkins-cluster'
         LOCATION = 'us-central1'
         DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
-        DOCKER_BUILDKIT = '1'
     }
 
     stages {
@@ -111,61 +101,32 @@ spec:
             }
         }
 
-        stage('Build and Push Docker Images') {
+        stage('Build and Push Docker Images with Kaniko') {
             steps {
-                container('docker') {
+                container('kaniko') {
                     script {
-                        def safeDockerPush = { imageName ->
-                            int maxRetries = 3
-                            int delaySeconds = 10
-                            int attempt = 1
+                        def services = [
+                            'configserver': 'configserver',
+                            'eurekaserver': 'eurekaserver',
+                            'gatewayserver': 'gatewayserver',
+                            'accounts': 'accounts-service',
+                            'cards': 'cards-service',
+                            'loans': 'loans-service'
+                        ]
 
-                            while (attempt <= maxRetries) {
-                                echo "🔄 Intento ${attempt} para subir ${imageName}"
-                                def result = sh(script: "docker push ${imageName}", returnStatus: true)
-
-                                if (result == 0) {
-                                    echo "✅ Imagen ${imageName} subida correctamente"
-                                    break
-                                } else {
-                                    echo "⚠️ Falló el push (intento ${attempt})"
-                                    if (attempt == maxRetries) {
-                                        error "❌ No se pudo subir ${imageName} después de ${maxRetries} intentos"
-                                    }
-                                    sleep(time: delaySeconds, unit: "SECONDS")
-                                    attempt++
+                        parallel services.collectEntries { dirName, dockerName ->
+                            ["${dirName}": {
+                                dir(dirName) {
+                                    def imageName = "cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION}"
+                                    sh """
+                                        /kaniko/executor \
+                                          --dockerfile=Dockerfile \
+                                          --context=. \
+                                          --destination=${imageName} \
+                                          --skip-tls-verify
+                                    """
                                 }
-                            }
-                        }
-
-                        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                            sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-
-                            def services = [
-                                'configserver': 'configserver',
-                                'eurekaserver': 'eurekaserver',
-                                'gatewayserver': 'gatewayserver',
-                                'accounts': 'accounts-service',
-                                'cards': 'cards-service',
-                                'loans': 'loans-service'
-                            ]
-
-                            parallel services.collectEntries { dirName, dockerName ->
-                                ["${dirName}": {
-                                    dir(dirName) {
-                                        def imageName = "cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION}"
-
-                                        sh """
-                                            echo ">> Construyendo imagen ${imageName}"
-                                            docker build -t ${imageName} .
-                                        """
-
-                                        safeDockerPush(imageName)
-                                    }
-                                }]
-                            }
-
-                            sh 'docker logout'
+                            }]
                         }
                     }
                 }
