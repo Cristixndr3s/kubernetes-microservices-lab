@@ -20,10 +20,7 @@ spec:
         cpu: "1"
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
-    command:
-      - sleep
-    args:
-      - "9999"
+    tty: true
     volumeMounts:
       - name: kaniko-secret
         mountPath: /kaniko/.docker
