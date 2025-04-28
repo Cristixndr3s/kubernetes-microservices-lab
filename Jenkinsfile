@@ -18,6 +18,15 @@ spec:
       limits:
         memory: "2Gi"
         cpu: "1"
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:latest
+    command:
+      - sleep
+    args:
+      - "9999"
+    volumeMounts:
+      - name: kaniko-secret
+        mountPath: /kaniko/.docker
   volumes:
     - name: kaniko-secret
       secret:
@@ -101,221 +110,29 @@ spec:
         }
 
         stage('Build and Push Docker Images with Kaniko') {
-            parallel {
-                stage('Config Server') {
-                    agent {
-                        kubernetes {
-                            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    args:
-      - --dockerfile=Dockerfile
-      - --context=/workspace/configserver
-      - --destination=docker.io/cristixndres/configserver:${DOCKER_IMAGE_VERSION}
-      - --skip-tls-verify
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
-        memory: "1Gi"
-        cpu: "500m"
-    volumeMounts:
-      - name: kaniko-secret
-        mountPath: /kaniko/.docker
-  volumes:
-    - name: kaniko-secret
-      secret:
-        secretName: dockerhub-config
-"""
+            steps {
+                container('kaniko') {
+                    script {
+                        def services = [
+                            'configserver': 'configserver',
+                            'eurekaserver': 'eurekaserver',
+                            'gatewayserver': 'gatewayserver',
+                            'accounts': 'accounts-service',
+                            'cards': 'cards-service',
+                            'loans': 'loans-service'
+                        ]
+
+                        services.each { dirName, dockerName ->
+                            dir("${dirName}") {
+                                sh """
+                                    /kaniko/executor \
+                                      --dockerfile=Dockerfile \
+                                      --context=$(pwd) \
+                                      --destination=docker.io/cristixndres/${dockerName}:${DOCKER_IMAGE_VERSION} \
+                                      --skip-tls-verify
+                                """
+                            }
                         }
-                    }
-                    steps {
-                        echo "Construyendo y subiendo Config Server"
-                    }
-                }
-                stage('Eureka Server') {
-                    agent {
-                        kubernetes {
-                            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    args:
-      - --dockerfile=Dockerfile
-      - --context=/workspace/eurekaserver
-      - --destination=docker.io/cristixndres/eurekaserver:${DOCKER_IMAGE_VERSION}
-      - --skip-tls-verify
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
-        memory: "1Gi"
-        cpu: "500m"
-    volumeMounts:
-      - name: kaniko-secret
-        mountPath: /kaniko/.docker
-  volumes:
-    - name: kaniko-secret
-      secret:
-        secretName: dockerhub-config
-"""
-                        }
-                    }
-                    steps {
-                        echo "Construyendo y subiendo Eureka Server"
-                    }
-                }
-                stage('Gateway Server') {
-                    agent {
-                        kubernetes {
-                            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    args:
-      - --dockerfile=Dockerfile
-      - --context=/workspace/gatewayserver
-      - --destination=docker.io/cristixndres/gatewayserver:${DOCKER_IMAGE_VERSION}
-      - --skip-tls-verify
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
-        memory: "1Gi"
-        cpu: "500m"
-    volumeMounts:
-      - name: kaniko-secret
-        mountPath: /kaniko/.docker
-  volumes:
-    - name: kaniko-secret
-      secret:
-        secretName: dockerhub-config
-"""
-                        }
-                    }
-                    steps {
-                        echo "Construyendo y subiendo Gateway Server"
-                    }
-                }
-                stage('Accounts') {
-                    agent {
-                        kubernetes {
-                            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    args:
-      - --dockerfile=Dockerfile
-      - --context=/workspace/accounts
-      - --destination=docker.io/cristixndres/accounts-service:${DOCKER_IMAGE_VERSION}
-      - --skip-tls-verify
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
-        memory: "1Gi"
-        cpu: "500m"
-    volumeMounts:
-      - name: kaniko-secret
-        mountPath: /kaniko/.docker
-  volumes:
-    - name: kaniko-secret
-      secret:
-        secretName: dockerhub-config
-"""
-                        }
-                    }
-                    steps {
-                        echo "Construyendo y subiendo Accounts"
-                    }
-                }
-                stage('Cards') {
-                    agent {
-                        kubernetes {
-                            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    args:
-      - --dockerfile=Dockerfile
-      - --context=/workspace/cards
-      - --destination=docker.io/cristixndres/cards-service:${DOCKER_IMAGE_VERSION}
-      - --skip-tls-verify
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
-        memory: "1Gi"
-        cpu: "500m"
-    volumeMounts:
-      - name: kaniko-secret
-        mountPath: /kaniko/.docker
-  volumes:
-    - name: kaniko-secret
-      secret:
-        secretName: dockerhub-config
-"""
-                        }
-                    }
-                    steps {
-                        echo "Construyendo y subiendo Cards"
-                    }
-                }
-                stage('Loans') {
-                    agent {
-                        kubernetes {
-                            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    args:
-      - --dockerfile=Dockerfile
-      - --context=/workspace/loans
-      - --destination=docker.io/cristixndres/loans-service:${DOCKER_IMAGE_VERSION}
-      - --skip-tls-verify
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
-        memory: "1Gi"
-        cpu: "500m"
-    volumeMounts:
-      - name: kaniko-secret
-        mountPath: /kaniko/.docker
-  volumes:
-    - name: kaniko-secret
-      secret:
-        secretName: dockerhub-config
-"""
-                        }
-                    }
-                    steps {
-                        echo "Construyendo y subiendo Loans"
                     }
                 }
             }
