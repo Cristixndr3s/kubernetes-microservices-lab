@@ -13,11 +13,11 @@ spec:
     tty: true
     resources:
       requests:
-        memory: "512Mi"
-        cpu: "250m"
-      limits:
         memory: "1Gi"
         cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1"
   volumes:
     - name: kaniko-secret
       secret:
