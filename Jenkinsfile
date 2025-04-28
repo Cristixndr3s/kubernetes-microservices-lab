@@ -20,9 +20,6 @@ spec:
         cpu: "500m"
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
-    command:
-      - cat
-    tty: true
     resources:
       requests:
         memory: "512Mi"
@@ -30,6 +27,9 @@ spec:
       limits:
         memory: "1Gi"
         cpu: "500m"
+    volumeMounts:
+      - name: kaniko-secret
+        mountPath: /kaniko/.docker
   volumes:
     - name: kaniko-secret
       secret:
@@ -133,7 +133,7 @@ spec:
                                         /kaniko/executor \
                                           --dockerfile=Dockerfile \
                                           --context=. \
-                                          --destination=${imageName} \
+                                          --destination=docker.io/${imageName} \
                                           --skip-tls-verify
                                     """
                                 }
