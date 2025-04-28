@@ -11,14 +11,25 @@ spec:
     command:
       - cat
     tty: true
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
     command:
       - cat
     tty: true
-    volumeMounts:
-      - name: kaniko-secret
-        mountPath: /kaniko/.docker
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
   volumes:
     - name: kaniko-secret
       secret:
