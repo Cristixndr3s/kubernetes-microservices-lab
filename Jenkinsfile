@@ -20,6 +20,10 @@ spec:
         cpu: "1"
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
+    command:
+      - /busybox/sh
+      - -c
+      - tail -f /dev/null
     tty: true
     volumeMounts:
       - name: kaniko-secret
