@@ -21,10 +21,17 @@ spec:
       - cat
     tty: true
   - name: docker
-    image: docker:24.0.2-cli
+    image: docker:20.10.7
     command:
       - cat
     tty: true
+    volumeMounts:
+      - name: docker-sock
+        mountPath: /var/run/docker.sock
+  volumes:
+    - name: docker-sock
+      hostPath:
+        path: /var/run/docker.sock
 """
         }
     }
