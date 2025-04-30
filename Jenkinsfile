@@ -3,6 +3,9 @@ pipeline {
 
     environment {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub')
+        PROJECT_ID = 'devopsuq'
+        CLUSTER_NAME = 'microservicios-cluster'
+        LOCATION = 'us-central1-a'
         DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
         DOCKER_BUILDKIT = '1'
     }
@@ -64,6 +67,29 @@ pipeline {
         stage('Build and Push Docker Images') {
             steps {
                 script {
+                    def safeDockerPush = { imageName ->
+                        int maxRetries = 3
+                        int retryDelaySeconds = 10
+                        int attempt = 1
+
+                        while (attempt <= maxRetries) {
+                            echo "🔄 Intento ${attempt} para subir ${imageName}"
+                            def result = sh(script: "docker push ${imageName}", returnStatus: true)
+                            
+                            if (result == 0) {
+                                echo "✅ Imagen ${imageName} subida correctamente en el intento ${attempt}"
+                                break
+                            } else {
+                                echo "⚠️ Falló el push de ${imageName} (intento ${attempt})"
+                                if (attempt == maxRetries) {
+                                    error "❌ No se pudo subir ${imageName} después de ${maxRetries} intentos"
+                                }
+                                sleep(time: retryDelaySeconds, unit: "SECONDS")
+                                attempt++
+                            }
+                        }
+                    }
+
                     withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
 
@@ -79,11 +105,23 @@ pipeline {
                         parallel services.collectEntries { dirName, dockerName ->
                             ["${dirName}" : {
                                 dir(dirName) {
-                                    def imageName = "${DOCKER_USER}/${dockerName}:${DOCKER_IMAGE_VERSION}"
+                                    def imageName = "jbelzeboss97/${dockerName}:${DOCKER_IMAGE_VERSION}"
+
                                     sh """
+                                        echo ">> Construyendo imagen ${imageName}"
                                         docker build --platform linux/amd64 -t ${imageName} .
-                                        docker push ${imageName}
                                     """
+
+                                    def exists = sh(
+                                        script: "curl --silent -f -lSL https://hub.docker.com/v2/repositories/jbelzeboss97/${dockerName}/tags/${DOCKER_IMAGE_VERSION}/ > /dev/null && echo true || echo false",
+                                        returnStdout: true
+                                    ).trim()
+
+                                    if (exists == "false") {
+                                        safeDockerPush(imageName)
+                                    } else {
+                                        echo ">> La imagen ${imageName} ya existe, omitiendo push"
+                                    }
                                 }
                             }]
                         }
@@ -107,26 +145,33 @@ pipeline {
                     ]
                     services.each { dirName, dockerName ->
                         sh """
-                            sed -i 's|${dockerName}:.*|${dockerName}:${DOCKER_IMAGE_VERSION}|' k8s/${dirName}/deployment.yaml || true
+                            sed -i 's|jbelzeboss97/${dockerName}:[^ ]*|jbelzeboss97/${dockerName}:${DOCKER_IMAGE_VERSION}|' k8s/${dirName}/deployment.yaml
                         """
                     }
                 }
             }
         }
 
-        stage('Deploy to Minikube') {
+        stage('Deploy to GKE') {
             steps {
-                script {
-                    sh '''
-                        echo "▶ Aplicando ConfigMap central"
-                        kubectl apply -f k8s/configmap.yaml
+                withCredentials([file(credentialsId: 'gcp-credentials', variable: 'GCP_KEY')]) {
+                    script {
+                        sh '''
+                            gcloud auth activate-service-account --key-file=$GCP_KEY
+                            gcloud container clusters get-credentials $CLUSTER_NAME --zone $LOCATION --project $PROJECT_ID
 
-                        echo "▶ Aplicando deployments y services"
-                        for service in configserver eurekaserver gatewayserver accounts loans cards; do
-                            kubectl apply -f k8s/$service/deployment.yaml
-                            kubectl apply -f k8s/$service/service.yaml
-                        done
-                    '''
+                            if [ -f k8s/configmap.yaml ]; then
+                                kubectl apply -f k8s/configmap.yaml
+                            else
+                                echo "⚠️ No se encontró k8s/configmap.yaml, se omite."
+                            fi
+
+                            for service in configserver eurekaserver gatewayserver accounts loans cards; do
+                                kubectl apply -f k8s/$service/deployment.yaml
+                                kubectl apply -f k8s/$service/service.yaml
+                            done
+                        '''
+                    }
                 }
             }
         }
