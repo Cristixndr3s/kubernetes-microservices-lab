@@ -3,9 +3,6 @@ pipeline {
 
     environment {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub')
-        PROJECT_ID = 'devopsuq'
-        CLUSTER_NAME = 'microservicios-cluster'
-        LOCATION = 'us-central1-a'
         DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
         DOCKER_BUILDKIT = '1'
     }
@@ -75,9 +72,9 @@ pipeline {
                         while (attempt <= maxRetries) {
                             echo "🔄 Intento ${attempt} para subir ${imageName}"
                             def result = sh(script: "docker push ${imageName}", returnStatus: true)
-                            
+
                             if (result == 0) {
-                                echo "✅ Imagen ${imageName} subida correctamente en el intento ${attempt}"
+                                echo "✅ Imagen ${imageName} subida correctamente"
                                 break
                             } else {
                                 echo "⚠️ Falló el push de ${imageName} (intento ${attempt})"
@@ -151,6 +148,22 @@ pipeline {
                 }
             }
         }
+
+        stage('Deploy to Minikube') {
+            steps {
+                script {
+                    sh '''
+                        kubectl apply -f k8s/configmap.yaml
+
+                        for service in configserver eurekaserver gatewayserver accounts loans cards; do
+                            kubectl apply -f k8s/$service/deployment.yaml
+                            kubectl apply -f k8s/$service/service.yaml
+                        done
+                    '''
+                }
+            }
+        }
+    }
 
     post {
         always {
