@@ -2,6 +2,7 @@ pipeline {
     agent any
 
     environment {
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')
         DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
         DOCKER_BUILDKIT = '1'
     }
@@ -60,33 +61,72 @@ pipeline {
             }
         }
 
-        stage('Deploy to Minikube') {
+        stage('Build and Push Docker Images') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+
+                        def services = [
+                            'configserver': 'configserver',
+                            'eurekaserver': 'eurekaserver',
+                            'gatewayserver': 'gatewayserver',
+                            'accounts': 'accounts-service',
+                            'cards': 'cards-service',
+                            'loans': 'loans-service'
+                        ]
+
+                        parallel services.collectEntries { dirName, dockerName ->
+                            ["${dirName}" : {
+                                dir(dirName) {
+                                    def imageName = "${DOCKER_USER}/${dockerName}:${DOCKER_IMAGE_VERSION}"
+                                    sh """
+                                        docker build --platform linux/amd64 -t ${imageName} .
+                                        docker push ${imageName}
+                                    """
+                                }
+                            }]
+                        }
+
+                        sh 'docker logout'
+                    }
+                }
+            }
+        }
+
+        stage('Update Kubernetes Manifests') {
             steps {
                 script {
                     def services = [
-                        'configserver',
-                        'eurekaserver',
-                        'gatewayserver',
-                        'accounts',
-                        'cards',
-                        'loans'
+                        'configserver': 'configserver',
+                        'eurekaserver': 'eurekaserver',
+                        'gatewayserver': 'gatewayserver',
+                        'accounts': 'accounts-service',
+                        'cards': 'cards-service',
+                        'loans': 'loans-service'
                     ]
-
-                    // Aplicar todos los ConfigMaps
-                    services.each { svc ->
-                        def cfg = "k8s/${svc}/configmap.yaml"
-                        if (fileExists(cfg)) {
-                            sh "kubectl apply -f ${cfg}"
-                        } else {
-                            echo "No se encontró ${cfg}, se omite."
-                        }
+                    services.each { dirName, dockerName ->
+                        sh """
+                            sed -i 's|${dockerName}:.*|${dockerName}:${DOCKER_IMAGE_VERSION}|' k8s/${dirName}/deployment.yaml || true
+                        """
                     }
+                }
+            }
+        }
 
-                    // Aplicar todos los Deployments y Services
-                    services.each { svc ->
-                        sh "kubectl apply -f k8s/${svc}/deployment.yaml"
-                        sh "kubectl apply -f k8s/${svc}/service.yaml"
-                    }
+        stage('Deploy to Minikube') {
+            steps {
+                script {
+                    sh '''
+                        echo "▶ Aplicando ConfigMap central"
+                        kubectl apply -f k8s/configmap.yaml
+
+                        echo "▶ Aplicando deployments y services"
+                        for service in configserver eurekaserver gatewayserver accounts loans cards; do
+                            kubectl apply -f k8s/$service/deployment.yaml
+                            kubectl apply -f k8s/$service/service.yaml
+                        done
+                    '''
                 }
             }
         }
