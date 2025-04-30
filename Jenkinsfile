@@ -3,9 +3,6 @@ pipeline {
 
     environment {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub')
-        PROJECT_ID = 'devopsuq'
-        CLUSTER_NAME = 'microservicios-cluster'
-        LOCATION = 'us-central1-a'
         DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
         DOCKER_BUILDKIT = '1'
     }
@@ -77,7 +74,7 @@ pipeline {
                             def result = sh(script: "docker push ${imageName}", returnStatus: true)
                             
                             if (result == 0) {
-                                echo "✅ Imagen ${imageName} subida correctamente en el intento ${attempt}"
+                                echo "✅ Imagen ${imageName} subida correctamente"
                                 break
                             } else {
                                 echo "⚠️ Falló el push de ${imageName} (intento ${attempt})"
@@ -152,26 +149,17 @@ pipeline {
             }
         }
 
-        stage('Deploy to GKE') {
+        stage('Deploy to Minikube') {
             steps {
-                withCredentials([file(credentialsId: 'gcp-credentials', variable: 'GCP_KEY')]) {
-                    script {
-                        sh '''
-                            gcloud auth activate-service-account --key-file=$GCP_KEY
-                            gcloud container clusters get-credentials $CLUSTER_NAME --zone $LOCATION --project $PROJECT_ID
+                script {
+                    sh '''
+                        kubectl apply -f k8s/configmap.yaml
 
-                            if [ -f k8s/configmap.yaml ]; then
-                                kubectl apply -f k8s/configmap.yaml
-                            else
-                                echo "⚠️ No se encontró k8s/configmap.yaml, se omite."
-                            fi
-
-                            for service in configserver eurekaserver gatewayserver accounts loans cards; do
-                                kubectl apply -f k8s/$service/deployment.yaml
-                                kubectl apply -f k8s/$service/service.yaml
-                            done
-                        '''
-                    }
+                        for service in configserver eurekaserver gatewayserver accounts loans cards; do
+                            kubectl apply -f k8s/$service/deployment.yaml
+                            kubectl apply -f k8s/$service/service.yaml
+                        done
+                    '''
                 }
             }
         }
