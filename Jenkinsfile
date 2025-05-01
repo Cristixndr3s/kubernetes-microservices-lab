@@ -154,7 +154,6 @@ pipeline {
 
         stage('Deploy to Minikube') {
     steps {
-        sh 'kubectl get nodes'
         sh 'kubectl apply -f k8s/configmap.yaml'
         sh 'kubectl apply -f k8s/configserver --recursive'
         sh 'kubectl apply -f k8s/eurekaserver --recursive'
@@ -164,6 +163,7 @@ pipeline {
         sh 'kubectl apply -f k8s/loans --recursive'
     }
 }
+
 
     }
 
