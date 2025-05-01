@@ -133,28 +133,24 @@ pipeline {
             }
         }
 
-        stage('Deploy to Minikube') {
-            agent {
-                docker {
-                    image 'bitnami/kubectl:latest'
-                    args '-v /root/.kube:/root/.kube:ro'
-                }
-            }
-            steps {
-                script {
-                    sh 'kubectl version --client'
-                    sh 'kubectl get nodes'
-
-                    sh 'kubectl apply -f k8s/configmap.yaml'
-                    sh 'kubectl apply -f k8s/configserver'
-                    sh 'kubectl apply -f k8s/eurekaserver'
-                    sh 'kubectl apply -f k8s/gatewayserver'
-                    sh 'kubectl apply -f k8s/accounts'
-                    sh 'kubectl apply -f k8s/cards'
-                    sh 'kubectl apply -f k8s/loans'
-                }
+stage('Deploy to Minikube') {
+    steps {
+        script {
+            docker.image('bitnami/kubectl:latest').inside('-v /root/.kube:/root/.kube:ro') {
+                sh 'kubectl version --client'
+                sh 'kubectl get nodes'
+                sh 'kubectl apply -f k8s/configmap.yaml'
+                sh 'kubectl apply -f k8s/configserver'
+                sh 'kubectl apply -f k8s/eurekaserver'
+                sh 'kubectl apply -f k8s/gatewayserver'
+                sh 'kubectl apply -f k8s/accounts'
+                sh 'kubectl apply -f k8s/cards'
+                sh 'kubectl apply -f k8s/loans'
             }
         }
+    }
+}
+
     }
 
     post {
