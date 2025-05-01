@@ -5,6 +5,7 @@ pipeline {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub')
         DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
         DOCKER_BUILDKIT = '1'
+        DOCKER_USERNAME = 'cristixndr3s'
     }
 
     stages {
@@ -91,18 +92,19 @@ pipeline {
                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
 
                         def services = [
-                            'configserver': 'configserver',
-                            'eurekaserver': 'eurekaserver',
-                            'gatewayserver': 'gatewayserver',
-                            'accounts': 'accounts-service',
-                            'cards': 'cards-service',
-                            'loans': 'loans-service'
+                            'configserver',
+                            'eurekaserver',
+                            'gatewayserver',
+                            'accounts',
+                            'cards',
+                            'loans'
                         ]
 
-                        parallel services.collectEntries { dirName, dockerName ->
-                            ["${dirName}" : {
-                                dir(dirName) {
-                                    def imageName = "jbelzeboss97/${dockerName}:${DOCKER_IMAGE_VERSION}"
+                        parallel services.collectEntries { service ->
+                            ["${service}" : {
+                                dir(service) {
+                                    def dockerName = "app-microservicios-${service}"
+                                    def imageName = "${DOCKER_USERNAME}/${dockerName}:${DOCKER_IMAGE_VERSION}"
 
                                     sh """
                                         echo ">> Construyendo imagen ${imageName}"
@@ -110,7 +112,7 @@ pipeline {
                                     """
 
                                     def exists = sh(
-                                        script: "curl --silent -f -lSL https://hub.docker.com/v2/repositories/jbelzeboss97/${dockerName}/tags/${DOCKER_IMAGE_VERSION}/ > /dev/null && echo true || echo false",
+                                        script: "curl --silent -f -lSL https://hub.docker.com/v2/repositories/${DOCKER_USERNAME}/${dockerName}/tags/${DOCKER_IMAGE_VERSION}/ > /dev/null && echo true || echo false",
                                         returnStdout: true
                                     ).trim()
 
@@ -133,16 +135,17 @@ pipeline {
             steps {
                 script {
                     def services = [
-                        'configserver': 'configserver',
-                        'eurekaserver': 'eurekaserver',
-                        'gatewayserver': 'gatewayserver',
-                        'accounts': 'accounts-service',
-                        'cards': 'cards-service',
-                        'loans': 'loans-service'
+                        'configserver',
+                        'eurekaserver',
+                        'gatewayserver',
+                        'accounts',
+                        'cards',
+                        'loans'
                     ]
-                    services.each { dirName, dockerName ->
+                    services.each { service ->
+                        def dockerName = "app-microservicios-${service}"
                         sh """
-                            sed -i 's|jbelzeboss97/${dockerName}:[^ ]*|jbelzeboss97/${dockerName}:${DOCKER_IMAGE_VERSION}|' k8s/${dirName}/deployment.yaml
+                            sed -i 's|[^ ]*/${dockerName}:[^ ]*|${DOCKER_USERNAME}/${dockerName}:${DOCKER_IMAGE_VERSION}|' k8s/${service}/deployment.yaml
                         """
                     }
                 }
