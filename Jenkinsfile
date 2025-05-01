@@ -134,22 +134,24 @@ pipeline {
         }
 
         stage('Deploy to Minikube') {
+            agent {
+                docker {
+                    image 'bitnami/kubectl:latest'
+                    args '-v /root/.kube:/root/.kube:ro'
+                }
+            }
             steps {
                 script {
-                    docker.image('bitnami/kubectl:latest').inside('-v /c/jenkins-kube:/root/.kube:ro') {
-                        sh 'kubectl version --client'
-                        sh 'kubectl config current-context'
-                        sh 'kubectl cluster-info'
-                        sh 'kubectl get nodes'
+                    sh 'kubectl version --client'
+                    sh 'kubectl get nodes'
 
-                        sh 'kubectl apply -f k8s/configmap.yaml'
-                        sh 'kubectl apply -f k8s/configserver --recursive'
-                        sh 'kubectl apply -f k8s/eurekaserver --recursive'
-                        sh 'kubectl apply -f k8s/gatewayserver --recursive'
-                        sh 'kubectl apply -f k8s/accounts --recursive'
-                        sh 'kubectl apply -f k8s/cards --recursive'
-                        sh 'kubectl apply -f k8s/loans --recursive'
-                    }
+                    sh 'kubectl apply -f k8s/configmap.yaml'
+                    sh 'kubectl apply -f k8s/configserver'
+                    sh 'kubectl apply -f k8s/eurekaserver'
+                    sh 'kubectl apply -f k8s/gatewayserver'
+                    sh 'kubectl apply -f k8s/accounts'
+                    sh 'kubectl apply -f k8s/cards'
+                    sh 'kubectl apply -f k8s/loans'
                 }
             }
         }
