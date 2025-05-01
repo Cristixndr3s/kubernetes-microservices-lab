@@ -153,19 +153,18 @@ pipeline {
         }
 
         stage('Deploy to Minikube') {
-            steps {
-                script {
-                    sh '''
-                        kubectl apply -f k8s/configmap.yaml
+    steps {
+        sh 'kubectl get nodes'
+        sh 'kubectl apply -f k8s/configmap.yaml'
+        sh 'kubectl apply -f k8s/configserver --recursive'
+        sh 'kubectl apply -f k8s/eurekaserver --recursive'
+        sh 'kubectl apply -f k8s/gatewayserver --recursive'
+        sh 'kubectl apply -f k8s/accounts --recursive'
+        sh 'kubectl apply -f k8s/cards --recursive'
+        sh 'kubectl apply -f k8s/loans --recursive'
+    }
+}
 
-                        for service in configserver eurekaserver gatewayserver accounts loans cards; do
-                            kubectl apply -f k8s/$service/deployment.yaml
-                            kubectl apply -f k8s/$service/service.yaml
-                        done
-                    '''
-                }
-            }
-        }
     }
 
     post {
