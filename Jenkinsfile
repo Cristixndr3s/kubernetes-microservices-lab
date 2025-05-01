@@ -5,6 +5,7 @@ pipeline {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub')
         DOCKER_IMAGE_VERSION = "v${BUILD_NUMBER}"
         DOCKER_BUILDKIT = '1'
+        DOCKER_USERNAME = 'cristixndr3s'
     }
 
     stages {
@@ -62,59 +63,69 @@ pipeline {
         }
 
         stage('Build and Push Docker Images') {
-            parallel {
-                stage('Config Server') {
-                    steps {
-                        dir('configserver') {
-                            script {
-                                docker.build("cristixndr3s/app-microservicios-configserver:${DOCKER_IMAGE_VERSION}").push()
+            steps {
+                script {
+                    def safeDockerPush = { imageName ->
+                        int maxRetries = 3
+                        int retryDelaySeconds = 10
+                        int attempt = 1
+
+                        while (attempt <= maxRetries) {
+                            echo "🔄 Intento ${attempt} para subir ${imageName}"
+                            def result = sh(script: "docker push ${imageName}", returnStatus: true)
+
+                            if (result == 0) {
+                                echo "✅ Imagen ${imageName} subida correctamente"
+                                break
+                            } else {
+                                echo "⚠️ Falló el push de ${imageName} (intento ${attempt})"
+                                if (attempt == maxRetries) {
+                                    error "❌ No se pudo subir ${imageName} después de ${maxRetries} intentos"
+                                }
+                                sleep(time: retryDelaySeconds, unit: "SECONDS")
+                                attempt++
                             }
                         }
                     }
-                }
-                stage('Eureka Server') {
-                    steps {
-                        dir('eurekaserver') {
-                            script {
-                                docker.build("cristixndr3s/app-microservicios-eurekaserver:${DOCKER_IMAGE_VERSION}").push()
-                            }
+
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+
+                        def services = [
+                            'configserver',
+                            'eurekaserver',
+                            'gatewayserver',
+                            'accounts',
+                            'cards',
+                            'loans'
+                        ]
+
+                        parallel services.collectEntries { service ->
+                            ["${service}" : {
+                                dir(service) {
+                                    def dockerName = "app-microservicios-${service}"
+                                    def imageName = "${DOCKER_USERNAME}/${dockerName}:${DOCKER_IMAGE_VERSION}"
+
+                                    sh """
+                                        echo ">> Construyendo imagen ${imageName}"
+                                        docker build --platform linux/amd64 -t ${imageName} .
+                                    """
+
+                                    def exists = sh(
+                                        script: "curl --silent -f -lSL https://hub.docker.com/v2/repositories/${DOCKER_USERNAME}/${dockerName}/tags/${DOCKER_IMAGE_VERSION}/ > /dev/null && echo true || echo false",
+                                        returnStdout: true
+                                    ).trim()
+
+                                    if (exists == "false") {
+                                        safeDockerPush(imageName)
+                                    } else {
+                                        echo ">> La imagen ${imageName} ya existe, omitiendo push"
+                                    }
+                                }
+                            }]
                         }
-                    }
-                }
-                stage('Gateway Server') {
-                    steps {
-                        dir('gatewayserver') {
-                            script {
-                                docker.build("cristixndr3s/app-microservicios-gatewayserver:${DOCKER_IMAGE_VERSION}").push()
-                            }
-                        }
-                    }
-                }
-                stage('Accounts') {
-                    steps {
-                        dir('accounts') {
-                            script {
-                                docker.build("cristixndr3s/app-microservicios-accounts:${DOCKER_IMAGE_VERSION}").push()
-                            }
-                        }
-                    }
-                }
-                stage('Cards') {
-                    steps {
-                        dir('cards') {
-                            script {
-                                docker.build("cristixndr3s/app-microservicios-cards:${DOCKER_IMAGE_VERSION}").push()
-                            }
-                        }
-                    }
-                }
-                stage('Loans') {
-                    steps {
-                        dir('loans') {
-                            script {
-                                docker.build("cristixndr3s/app-microservicios-loans:${DOCKER_IMAGE_VERSION}").push()
-                            }
-                        }
+
+                        sh 'docker logout'
                     }
                 }
             }
@@ -123,35 +134,35 @@ pipeline {
         stage('Update Kubernetes Manifests') {
             steps {
                 script {
-                    sh "sed -i s|image:.*app-microservicios-configserver:.*|image: cristixndr3s/app-microservicios-configserver:${DOCKER_IMAGE_VERSION}| k8s/configserver/deployment.yaml"
-                    sh "sed -i s|image:.*app-microservicios-eurekaserver:.*|image: cristixndr3s/app-microservicios-eurekaserver:${DOCKER_IMAGE_VERSION}| k8s/eurekaserver/deployment.yaml"
-                    sh "sed -i s|image:.*app-microservicios-gatewayserver:.*|image: cristixndr3s/app-microservicios-gatewayserver:${DOCKER_IMAGE_VERSION}| k8s/gatewayserver/deployment.yaml"
-                    sh "sed -i s|image:.*app-microservicios-accounts:.*|image: cristixndr3s/app-microservicios-accounts:${DOCKER_IMAGE_VERSION}| k8s/accounts/deployment.yaml"
-                    sh "sed -i s|image:.*app-microservicios-cards:.*|image: cristixndr3s/app-microservicios-cards:${DOCKER_IMAGE_VERSION}| k8s/cards/deployment.yaml"
-                    sh "sed -i s|image:.*app-microservicios-loans:.*|image: cristixndr3s/app-microservicios-loans:${DOCKER_IMAGE_VERSION}| k8s/loans/deployment.yaml"
+                    def services = [
+                        'configserver',
+                        'eurekaserver',
+                        'gatewayserver',
+                        'accounts',
+                        'cards',
+                        'loans'
+                    ]
+                    services.each { service ->
+                        def dockerName = "app-microservicios-${service}"
+                        sh """
+                            sed -i 's|[^ ]*/${dockerName}:[^ ]*|${DOCKER_USERNAME}/${dockerName}:${DOCKER_IMAGE_VERSION}|' k8s/${service}/deployment.yaml
+                        """
+                    }
                 }
             }
         }
 
         stage('Deploy to Minikube') {
-            agent {
-                docker {
-                    image 'bitnami/kubectl:latest'
-                    args '-v /root/.kube:/root/.kube:ro'
-                }
-            }
             steps {
                 script {
-                    sh 'kubectl version --client'
-                    sh 'kubectl get nodes'
+                    sh '''
+                        kubectl apply -f k8s/configmap.yaml
 
-                    sh 'kubectl apply -f k8s/configmap.yaml'
-                    sh 'kubectl apply -f k8s/configserver'
-                    sh 'kubectl apply -f k8s/eurekaserver'
-                    sh 'kubectl apply -f k8s/gatewayserver'
-                    sh 'kubectl apply -f k8s/accounts'
-                    sh 'kubectl apply -f k8s/cards'
-                    sh 'kubectl apply -f k8s/loans'
+                        for service in configserver eurekaserver gatewayserver accounts loans cards; do
+                            kubectl apply -f k8s/$service/deployment.yaml
+                            kubectl apply -f k8s/$service/service.yaml
+                        done
+                    '''
                 }
             }
         }
